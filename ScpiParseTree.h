@@ -3,6 +3,9 @@
 
 #include "ScpiParseNode.h"
 
+/**
+ * @brief std::cerr对效率影响有点大,需要处理
+ */
 class ScpiParseTree
 {
 public:
@@ -41,14 +44,17 @@ public:
 
     std::string excute(const std::string& scpi)
     {
+        if(scpi.empty())
+            return "empty scpi command";
+
         const std::vector<std::string>& extraArgs = Awg::getExtraArgs();
-        std::vector<std::string> list = Awg::split(scpi," ");
+        std::vector<std::string> list = Awg::split(scpi,' ');
 
         std::vector<std::string> inputArgs{};
         if(list.size() > 1)
             inputArgs = Awg::splitArgs(list.at(1));
 
-        std::vector<std::string> cmds = Awg::split(list.at(0),":");
+        std::vector<std::string> cmds = Awg::split(list.at(0),':');
         FunctionWrapper* func = root->parse(cmds);
         if(func)
         {
@@ -58,8 +64,13 @@ public:
             if(func->execString(inputArgs))
                 return func->getResultString();
             else
+            {
+                std::cerr<<"target func exec fail"<<std::endl;
                 return "target func exec fail";
+            }
+
         }
+        std::cerr<<"no match function has been found"<<std::endl;
         return "no match function has been found";
     }
 

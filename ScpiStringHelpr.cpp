@@ -1,4 +1,4 @@
-#include "ScpiStringHelpr.h"
+﻿#include "ScpiStringHelpr.h"
 
 ///节点中可省略参数或者指定参数的集合
 static std::vector<std::string> extraArgs(10);
@@ -75,56 +75,6 @@ std::string splitScpiHelper_omissible(StringIt& beg,StringIt& mid,const StringIt
 }
 
 ///将SCPI字符串切割为若干个子命令,由于存在可省略指令,所以方括号的匹配必须匹配到最外层
-/*std::vector<std::string> Awg::splitScpiPattern(const std::string &input)
-{
-    std::vector<std::string> tokens;
-    StringIt beg = input.cbegin();
-    StringIt mid = input.cbegin();
-    StringIt end = input.cend();
-    while (beg < end)
-    {
-        if( *beg == ':' || std::isalpha(*beg))//如果第一个匹配上的是:或者是字母,就按:的模式查找下一个分隔符(冒号或者左方括号)
-        {
-            mid = beg + 1;
-            while (mid < end)
-            {
-                if( *mid == ':' || *mid == '[')
-                {
-                    break;
-                }
-                ++mid;
-            }
-            tokens.push_back(std::string(beg,mid));
-            beg = mid;
-        }
-        else if( (*beg)=='[' )//如果第一个匹配上的是 '[' 就按 ']' 的模式查完整的方括号
-        {
-            //每查找到一个'['都让层数计数器+1,直到匹配出全部方括号
-            int leftBrackets = 1;
-            mid = beg + 1;
-            while (mid < end)
-            {
-                if(*mid == '[')
-                    ++leftBrackets;
-                else if(*mid == ']')
-                    --leftBrackets;
-
-                ++mid;//break要放到这一步后面,因为迭代器是左闭右开区间
-
-                if(leftBrackets == 0)
-                    break;
-            }
-            tokens.push_back(std::string(beg,mid));
-            beg = mid;
-        }
-        else
-        {
-            ++beg;
-        }
-    }
-    return tokens;
-}*/
-
 std::vector<std::string> Awg::splitScpiPattern(const std::string &input)
 {
     //开始解析前先清除上一次保存的可连续省略的分支节点信息
@@ -139,14 +89,16 @@ std::vector<std::string> Awg::splitScpiPattern(const std::string &input)
         if( *beg == ':' || std::isalpha(*beg))//如果第一个匹配上的是:或者是字母,就按:的模式查找下一个分隔符:
         {
             std::string s = splitScpiHelper_Node(beg,mid,end);
-            tokens.push_back(s);
+            if(!s.empty())
+                tokens.push_back(std::move(s));
 
             beg = mid;
         }
         else if( (*beg)=='[' )//如果第一个匹配上的是 '[' 就按 ']' 的模式查完整的方括号
         {
             std::string s = splitScpiHelper_omissible(beg,mid,end);
-            tokens.push_back(s);
+            if(!s.empty())
+                tokens.push_back(std::move(s));
 
             beg = mid;
         }
@@ -172,25 +124,29 @@ std::vector<std::string> Awg::splitScpiPattern(const std::string &input)
     return tokens;
 }
 
-std::vector<std::string> Awg::split(const std::string& input,const std::string& spliter)
+std::vector<std::string> Awg::split(const std::string& input, const char spliter)
 {
     std::vector<std::string> tokens;
-    size_t startPos = 0;
-    size_t endPos = input.find(spliter,startPos);
 
-    while (endPos != std::string::npos)
+    StringIt beg = input.cbegin();
+    StringIt mid = input.cbegin();
+    StringIt end = input.cend();
+    while (mid != end)
     {
-        tokens.push_back(input.substr(startPos, endPos - startPos));
-        startPos = endPos + spliter.size();
-        endPos = input.find(spliter, startPos);
+        if (*mid == spliter)
+        {
+            // 只有当beg != current时才添加，避免空字符串
+            if (beg != mid)
+                tokens.emplace_back(beg, mid);
+            beg = mid + 1;
+        }
+        ++mid;
     }
 
-    // 添加最后一个分隔符后的子串（或最后一个子串）
-    tokens.push_back(input.substr(startPos, endPos));
-
-    //如果最后一个字符串为空,则删除最后一个
-    if(tokens.back().empty())
-        tokens.pop_back();
+    if (beg != end)
+    {
+        tokens.emplace_back(beg, end);
+    }
 
     return tokens;
 }
@@ -240,12 +196,14 @@ std::vector<std::string> Awg::splitArgs(const std::string &input)
             if(*beg == '(')//如果以括号开头则表示可能遇到了数组
             {
                 std::string array = splitArgsHelper_Array(beg,mid,end);
-                tokens.push_back(array);
+                if(!array.empty())
+                    tokens.push_back(std::move(array));
             }
             else//否则是一个单独的字符串元素
             {
                 std::string element = splitArgsHelper_Element(beg,mid,end);
-                tokens.push_back(element);
+                if(!element.empty())
+                    tokens.push_back(std::move(element));
             }
             beg = mid;
         }
@@ -303,7 +261,8 @@ int Awg::scpiMatch(const std::string &nodeCmd, const std::string &inputCmd)
     //跳过数字部分(目前<...>只能被数字替换,暂时还没发现可以用其他字符替换的SCPI指令)
     //所以跳过结尾的数值之后就认为现在的输入指令是完整的scpi
     StringIt inputMid = inputEnd;//不包括<...>对应字符的输入指令的结尾
-    if( nodeCmd.find("<") != std::string::npos && nodeCmd.find(">") != std::string::npos)
+    bool nodeArgFlag = nodeCmd.find("<") != std::string::npos && nodeCmd.find(">") != std::string::npos;
+    if( nodeArgFlag )
     {
         while (inputMid > inputBeg)
         {
@@ -311,20 +270,6 @@ int Awg::scpiMatch(const std::string &nodeCmd, const std::string &inputCmd)
                 --inputMid;
             else
                 break;
-        }
-
-        //节点参数可省略[:SOURce[<n>]]  节点参数不可省略[:SOURce<n>]
-        std::string s(inputMid,inputEnd);
-        if(s.empty())
-        {
-            //如果存在节点参数,但是实际输入的指令中被省略了,那么无论这个节点的参数在原始指令中是否可以被省略,这里都用-999代替,最后在函数接口中处理这个-999
-            //原因同上,目前节点参数暂时只有数字而且只能存在一个节点参数,所以这里直接使用-999代替暂时是没有问题的
-            extraArgs.push_back("-999");
-        }
-        else
-        {
-            //否则直接将输入指令的节点参数添加到额外参数列表中
-            extraArgs.push_back(s);
         }
     }
 
@@ -342,10 +287,34 @@ int Awg::scpiMatch(const std::string &nodeCmd, const std::string &inputCmd)
     };
 
     //开始匹配,输入指令要么全等于大小,要么全等于小写,不能作为子字符串判等
+    bool matchFlag = false;
     if(std::distance(inputBeg,inputMid) == std::distance(nodeMid,nodeMidl))
-        return cmp(nodeMid,nodeMidl,inputBeg);
+        matchFlag = cmp(nodeMid,nodeMidl,inputBeg);
     else if(std::distance(inputBeg,inputMid) == std::distance(nodeMid,nodeMidu))
-        return cmp(nodeMid,nodeMidu,inputBeg);
+        matchFlag =  cmp(nodeMid,nodeMidu,inputBeg);
     else
-        return false;
+        matchFlag = false;
+
+    //匹配成功之后才提取当前节点可能存在的节点参数
+    if(matchFlag)
+    {
+        if( nodeArgFlag )
+        {
+            //节点参数可省略[:SOURce[<n>]]  节点参数不可省略[:SOURce<n>]
+            std::string s(inputMid,inputEnd);
+            if(s.empty())
+            {
+                //如果存在节点参数,但是实际输入的指令中被省略了,那么无论这个节点的参数在原始指令中是否可以被省略,这里都用-999代替,最后在函数接口中处理这个-999
+                //原因同上,目前节点参数暂时只有数字而且只能存在一个节点参数,所以这里直接使用-999代替暂时是没有问题的
+                extraArgs.push_back("-999");
+            }
+            else
+            {
+                //否则直接将输入指令的节点参数添加到额外参数列表中
+                extraArgs.push_back(std::move(s));
+            }
+        }
+    }
+
+    return matchFlag;
 }
