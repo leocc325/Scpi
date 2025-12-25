@@ -13,17 +13,11 @@ public:
 
     void addScpiNode(std::vector<std::string>& regCmdVec,FunctionWrapper* setter,FunctionWrapper* getter);
 
-    ///查找某一条指令的最后一级指令对应的节点(使用原始SCPI指令查找任意节点)
-    ScpiParseNode* findNode(std::vector<std::string>& regCmd);
-
     ///查找是否有这条子命令对应的直接子节点
     ScpiParseNode* findDirectChildNode(const std::string& regCmd);
 
     ///从子节点中去查找匹配cmds的最后一级节点,从当前节点的直接子节点中去查找对应cmds中的第一条指令
     FunctionWrapper* parse(const std::vector<std::string>& cmds);
-
-    ///返回scpi指令的额外参数
-    static const std::vector<std::string>& getExtraArgs();
 
 private:
     bool hasChildren();
@@ -46,12 +40,12 @@ private:
     ScpiParseNode* parseOmissibleBranch();
 
 private:
-    static std::vector<std::string> extraArgs;//节点中可省略参数或者指定参数的集合
     std::string nodeCommand;//当前节点对应的指令
     std::list<ScpiParseNode*> allDirectNodes;//全部直接子节点
     std::list<ScpiParseNode*> omissibleNodes;//全部直接子节点中可省略节点的集合
     FunctionWrapper* setFunc = nullptr;
     FunctionWrapper* getFunc = nullptr;
+    bool existOmissibleBranch = false;//当前节点是否存在完全可省略的子分支
 };
 
 #endif // SCPIPARSENODE_H

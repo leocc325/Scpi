@@ -1,6 +1,5 @@
 #include "ScpiParseNode.h"
-
-std::vector<std::string> ScpiParseNode::extraArgs;
+#include <cassert>
 
 ScpiParseNode::ScpiParseNode()
 {
@@ -39,13 +38,21 @@ void ScpiParseNode::addScpiNode(std::vector<std::string> &regCmdVec, FunctionWra
             omissibleNodes.push_back(node);
     }
 
+    //判断新添加的子节点是否处于一条可省略分支上
+    const std::set<std::string>& sets = Awg::getOmissibleArgs();
+    if(sets.find(cmd) != sets.cend())
+    {
+        if(this->existOmissibleBranch)//如果已经存在一条可省略分支则直接让程序崩溃修改SCPI指令
+        {
+            std::cerr<<"cannot add more omissilbe branch at one node which has one omissible branch already"<<std::endl;
+            assert(false);
+        }
+        else
+            this->existOmissibleBranch = true;//否则将当前节点标记为[存在可省略分支]节点
+    }
+
     //递归调用这个函数,直到所有子命令都生成对应的节点
     node->addScpiNode(regCmdVec,setter,getter);
-}
-
-ScpiParseNode *ScpiParseNode::findNode(std::vector<std::string> &regCmd)
-{
-
 }
 
 ScpiParseNode *ScpiParseNode::findDirectChildNode(const std::string &regCmd)
@@ -60,7 +67,7 @@ ScpiParseNode *ScpiParseNode::findDirectChildNode(const std::string &regCmd)
 
 FunctionWrapper* ScpiParseNode::parse(const std::vector<std::string> &cmds)
 {
-    extraArgs.clear();//每一次解析完整指令前前清除上一次解析得到的额外参数
+    Awg::clearExtraArgs();//每一次解析完整指令前前清除上一次解析得到的额外参数
 
     std::vector<std::string>::const_iterator cmdBeg = cmds.cbegin();
     std::vector<std::string>::const_iterator cmdEnd = cmds.cend();
@@ -73,22 +80,14 @@ FunctionWrapper* ScpiParseNode::parse(const std::vector<std::string> &cmds)
         return Awg::isQueryScpi(*cmds.crbegin()) ? node->getFunc : node->setFunc;
 }
 
-const std::vector<std::string> &ScpiParseNode::getExtraArgs()
-{
-    return extraArgs;
-}
-
 bool ScpiParseNode::hasChildren()
 {
-    return  !allDirectNodes.empty();
+    return !allDirectNodes.empty();
 }
 
 bool ScpiParseNode::omissible()
 {
-    if(nodeCommand.empty())
-        return false;
-    else
-        return (nodeCommand[0] == '[');
+    return Awg::isOmissible(nodeCommand);
 }
 
 ScpiParseNode *ScpiParseNode::match(const std::string &inputCmd)

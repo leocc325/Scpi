@@ -1,10 +1,39 @@
 #include "ScpiStringHelpr.h"
 
+///节点中可省略参数或者指定参数的集合
+static std::vector<std::string> extraArgs(10);
+///注册SCPI检测到可完全的省略子分支时将这条分支的可省略节点对应的指令保存到这个数组中
+///关于omissibleCmds的若干操作(添加元素和查找)效率都比较低,但是这些操作都处于程序初始化阶段而且频率不会很高,所以暂时就这样
+static std::set<std::string> omissibleCmds;
+
 using StringIt = std::string::const_iterator;
+
+const std::vector<std::string> &Awg::getExtraArgs()
+{
+    return extraArgs;
+}
+
+const std::set<std::string> &Awg::getOmissibleArgs()
+{
+    return omissibleCmds;
+}
+
+void Awg::clearExtraArgs()
+{
+    extraArgs.clear();
+}
 
 bool Awg::isQueryScpi(const std::string &input)
 {
     return input.back() == '?';
+}
+
+bool Awg::isOmissible(const std::string &input)
+{
+    if(input.empty())
+        return false;
+    else
+        return (*input.cbegin() == '[') && (*input.crbegin() == ']');
 }
 
 std::string splitScpiHelper_Node(StringIt& beg,StringIt& mid,const StringIt& end)
@@ -12,8 +41,12 @@ std::string splitScpiHelper_Node(StringIt& beg,StringIt& mid,const StringIt& end
     mid = beg + 1;
     while (mid < end)
     {
-        if( *mid == ':' || *mid == '[')
+        //如果是不可省略节点,就一定要查找到下一个:分割符才算是一个完整的节点,然后再判断:分割符前面是不是左方括号,
+        //如果是左方括号则说明进入了下一个可省略节点的内部,此时需要将指针位置往后移动一次，此时两个指针之间的字符串才是正确的scpi节点
+        if( *mid == ':' )
         {
+            if(*(mid-1) == '[')
+                --mid;
             break;
         }
         ++mid;
@@ -94,13 +127,16 @@ std::string splitScpiHelper_omissible(StringIt& beg,StringIt& mid,const StringIt
 
 std::vector<std::string> Awg::splitScpiPattern(const std::string &input)
 {
+    //开始解析前先清除上一次保存的可连续省略的分支节点信息
+    omissibleCmds.clear();
+
     std::vector<std::string> tokens;
     StringIt beg = input.cbegin();
     StringIt mid = input.cbegin();
     StringIt end = input.cend();
     while (beg < end)
     {
-        if( *beg == ':' || std::isalpha(*beg))//如果第一个匹配上的是:或者是字母,就按:的模式查找下一个分隔符(冒号或者左方括号)
+        if( *beg == ':' || std::isalpha(*beg))//如果第一个匹配上的是:或者是字母,就按:的模式查找下一个分隔符:
         {
             std::string s = splitScpiHelper_Node(beg,mid,end);
             tokens.push_back(s);
@@ -118,6 +154,20 @@ std::vector<std::string> Awg::splitScpiPattern(const std::string &input)
         {
             ++beg;
         }
+    }
+
+    //逆序查找是否存在可连续省略的节点
+    auto omissBeg = tokens.crbegin();
+    auto omissEnd = tokens.crend();
+    while (omissBeg < omissEnd)
+    {
+        if(Awg::isOmissible(*omissBeg))
+        {
+            omissibleCmds.insert(*omissBeg);
+            ++omissBeg;
+        }
+        else
+            break;
     }
     return tokens;
 }
@@ -244,11 +294,16 @@ int Awg::scpiMatch(const std::string &nodeCmd, const std::string &inputCmd)
     }
     //现在[nodeBeg,nodeMidu)表示的就是原始指令的大写部分字符串,[nodeBeg,nodeMidl)表示的就是原始指令的大写+小写
 
+    //判断输入指令是否是查询指令,如果是查询指令则将输入指令的结束指针移动到问号位置
+    std::size_t quesPos = inputCmd.find('?');
+    if(quesPos != std::string::npos)
+        inputEnd = inputBeg + quesPos;
+
     //判断当前指令是否存在自定义部分,如果存在可省略部分,则将输入字符串的终止指针往前移动
-    //跳过数字部分(目前<n>只能被数字替换,暂时还没发现可以用其他字符替换的SCPI指令)
+    //跳过数字部分(目前<...>只能被数字替换,暂时还没发现可以用其他字符替换的SCPI指令)
     //所以跳过结尾的数值之后就认为现在的输入指令是完整的scpi
-    StringIt inputMid = inputEnd;//不包括<n>对应字符的输入指令的结尾
-    if( nodeCmd.find("<n>") != std::string::npos )
+    StringIt inputMid = inputEnd;//不包括<...>对应字符的输入指令的结尾
+    if( nodeCmd.find("<") != std::string::npos && nodeCmd.find(">") != std::string::npos)
     {
         while (inputMid > inputBeg)
         {
@@ -256,6 +311,20 @@ int Awg::scpiMatch(const std::string &nodeCmd, const std::string &inputCmd)
                 --inputMid;
             else
                 break;
+        }
+
+        //节点参数可省略[:SOURce[<n>]]  节点参数不可省略[:SOURce<n>]
+        std::string s(inputMid,inputEnd);
+        if(s.empty())
+        {
+            //如果存在节点参数,但是实际输入的指令中被省略了,那么无论这个节点的参数在原始指令中是否可以被省略,这里都用-999代替,最后在函数接口中处理这个-999
+            //原因同上,目前节点参数暂时只有数字而且只能存在一个节点参数,所以这里直接使用-999代替暂时是没有问题的
+            extraArgs.push_back("-999");
+        }
+        else
+        {
+            //否则直接将输入指令的节点参数添加到额外参数列表中
+            extraArgs.push_back(s);
         }
     }
 
