@@ -49,30 +49,28 @@ public:
 /**将StringConvertor中的数组转换结果改成(@1,2,3)这样的形式,就可以适配SCPI中的数组了*/
     std::string excute(const std::string& scpi)
     {
+
         //将字符串拆解为指令和参数两部分
-        /**
-         * 假如这个函数本身就不需要参数，那么这里将无法拆分***修改
-         */
+        const std::vector<std::string>& extraArgs = root->getExtraArgs();
         std::vector<std::string> list = Awg::split(scpi," ");
-        if(list.size() == 2)
+
+        std::vector<std::string> inputArgs{};
+        if(list.size() > 1)
+            inputArgs = Awg::splitArgs(list.at(1));
+
+        std::vector<std::string> cmds = Awg::split(list.at(0),":");
+        FunctionWrapper* func = root->parse(cmds);
+        if(func)
         {
-            std::vector<std::string> cmds = Awg::split(list.at(0),":");
-            FunctionWrapper* func = root->parse(cmds);
-            if(func)
-            {
-                std::vector<std::string> args = Awg::splitArgs(list.at(1));
-                if(func->execString(args))
-                    return func->getResultString();
-                else
-                    return "call fail";
-            }
-            return "find error";
+            //将指令解析过程中的参数添加到输入参数的前面
+            inputArgs.insert(inputArgs.begin(), extraArgs.begin(), extraArgs.end());
+            //执行目标函数
+            if(func->execString(inputArgs))
+                return func->getResultString();
+            else
+                return "target func exec fail";
         }
-        else
-        {
-            std::cerr<<"error on scpi parts count";
-            return "cmd error";
-        }
+        return "no match function has been found";
     }
 
 private:
@@ -99,26 +97,26 @@ static void test()
     // 注册复杂路径命令
     tree.registeScpi("A[:B][:C]:D", func1, nullptr);          // 两个连续可选
     tree.registeScpi("X[:Y]:Z[:W]:T", func2, nullptr);        // 中间有可选
-    tree.registeScpi("P[:Q][:R]:S[:T]:U", nullptr, nullptr);    // 多级嵌套
+    tree.registeScpi("P[:Q][:R]:S[:T]:U", func3, nullptr);    // 多级嵌套
     tree.registeScpi("M[:N]:O[:P]:Q[:R]", func4, nullptr);    // 交替可选
     tree.registeScpi("G[:H]:I[:J][:K][:L]", &Object::func, nullptr,&obj);    // 复杂组合
 
     // 对应的测试输入
-    tree.excute("A:D 1");             // 全部省略
-    tree.excute("A:B:D 2");           // 包含B
-    tree.excute("A:C:D 3");           // 包含C
-    tree.excute("A:B:C:D 4");         // 全部包含
+    tree.excute("A:D");             // 全部省略
+    tree.excute("A:B:D");           // 包含B
+    tree.excute("A:C:D");           // 包含C
+    tree.excute("A:B:C:D ");         // 全部包含
 
-    tree.excute("X:Z:T 5");           // 省略Y和W
-    tree.excute("X:Y:Z:W:T 6");       // 全部包含
+    tree.excute("X:Z:T");           // 省略Y和W
+    tree.excute("X:Y:Z:W:T ");       // 全部包含
 
-    tree.excute("P:S:U 7");           // 全省略
-    tree.excute("P:Q:S:T:U 8");       // 包含Q和T
+    tree.excute("P:S:U ");           // 全省略
+    tree.excute("P:Q:S:T:U ");       // 包含Q和T
 
     tree.excute("M:O:Q 9");           // 全省略
-    tree.excute("M:N:O:P:Q:R 10");    // 全包含
+    tree.excute("M:N:O:P:Q:R ");    // 全包含
 
-    tree.excute("G:I 10");            // 全省略
-    tree.excute("G:H:I:J 10");        // 最后两级省略
+    tree.excute("G:I ");            // 全省略
+    tree.excute("G:H:I:J ");        // 最后两级省略
 }
 #endif // SCPIPARSETREE_H

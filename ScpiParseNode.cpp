@@ -43,19 +43,6 @@ void ScpiParseNode::addScpiNode(std::vector<std::string> &regCmdVec, FunctionWra
     node->addScpiNode(regCmdVec,setter,getter);
 }
 
-bool ScpiParseNode::hasChildren()
-{
-    return  !allDirectNodes.empty();
-}
-
-bool ScpiParseNode::omissible()
-{
-    if(nodeCommand.empty())
-        return false;
-    else
-        return (nodeCommand[0] == '[');
-}
-
 ScpiParseNode *ScpiParseNode::findNode(std::vector<std::string> &regCmd)
 {
 
@@ -71,16 +58,10 @@ ScpiParseNode *ScpiParseNode::findDirectChildNode(const std::string &regCmd)
     return nullptr;
 }
 
-ScpiParseNode *ScpiParseNode::match(const std::string &inputCmd)
-{
-    if(Awg::scpiMatch(nodeCommand,inputCmd))
-        return this;
-    else
-        return nullptr;
-}
-
 FunctionWrapper* ScpiParseNode::parse(const std::vector<std::string> &cmds)
 {
+    extraArgs.clear();//每一次解析完整指令前前清除上一次解析得到的额外参数
+
     std::vector<std::string>::const_iterator cmdBeg = cmds.cbegin();
     std::vector<std::string>::const_iterator cmdEnd = cmds.cend();
 
@@ -90,6 +71,32 @@ FunctionWrapper* ScpiParseNode::parse(const std::vector<std::string> &cmds)
         return nullptr;
     else
         return Awg::isQueryScpi(*cmds.crbegin()) ? node->getFunc : node->setFunc;
+}
+
+const std::vector<std::string> &ScpiParseNode::getExtraArgs()
+{
+    return extraArgs;
+}
+
+bool ScpiParseNode::hasChildren()
+{
+    return  !allDirectNodes.empty();
+}
+
+bool ScpiParseNode::omissible()
+{
+    if(nodeCommand.empty())
+        return false;
+    else
+        return (nodeCommand[0] == '[');
+}
+
+ScpiParseNode *ScpiParseNode::match(const std::string &inputCmd)
+{
+    if(Awg::scpiMatch(nodeCommand,inputCmd))
+        return this;
+    else
+        return nullptr;
 }
 
 ScpiParseNode *ScpiParseNode::parseNodes(std::vector<std::string>::const_iterator cmdIt, std::vector<std::string>::const_iterator cmdEnd)
