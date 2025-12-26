@@ -21,9 +21,6 @@ static void test()
     Object obj;
     ScpiParseTree tree;
 
-    tree.registeScpi("A:B[:C]", func1, nullptr);
-    tree.registeScpi("A:B[:C]:D", func1, nullptr);
-
     // 注册复杂路径命令
     tree.registeScpi("A[:B][:C]:D", func1, nullptr);          // 两个连续可选
     tree.registeScpi("X[:Y]:Z[:W]:T", func2, nullptr);        // 中间有可选
@@ -612,8 +609,42 @@ void testV2()
     registerSourceCommands(tree);
     registerStatusCommands(tree);
     registerSystemCommands(tree);
+    tree.registeScpi("A:B[:C]", func1, nullptr);
+    tree.registeScpi("A:B[:C]:D", func1, nullptr);
+
+    // 注册复杂路径命令
+    tree.registeScpi("A[:B][:C]:D", func1, nullptr);          // 两个连续可选
+    tree.registeScpi("X[:Y]:Z[:W]:T", func2, nullptr);        // 中间有可选
+    tree.registeScpi("P[:Q][:R]:S[:T]:U", func3, nullptr);    // 多级嵌套
+    tree.registeScpi("M[:N]:O[:P]:Q[:R]", func4, nullptr);    // 交替可选
+    tree.registeScpi("G[:H]:I[:J][:K][:L]", func5, nullptr);    // 复杂组合
+    tree.registeScpi("U:V[:W]:X[<n>]:Y", func6, func6);    // 节点存在可省略默认参数的设置和读取测试
+
     QElapsedTimer timer;
     timer.start();
+
+    // 对应的测试输入
+    tree.excute("A:D");             // 全部省略
+    tree.excute("A:B:D");           // 包含B
+    tree.excute("A:C:D");           // 包含C
+    tree.excute("A:B:C:D");         // 全部包含
+
+    tree.excute("X:Z:T");           // 省略Y和W
+    tree.excute("X:Y:Z:W:T ");       // 全部包含
+
+    tree.excute("P:S:U ");           // 全省略
+    tree.excute("P:Q:S:T:U");       // 包含Q和T
+
+    tree.excute("M:O:Q");           // 全省略
+    tree.excute("M:N:O:P:Q:R");    // 全包含
+
+    tree.excute("G:I 5,6");            // 全省略
+    tree.excute("G:H:I:J 5,7");        // 最后两级省略
+
+    tree.excute("U:V:X10:Y 20");
+    std::string s = tree.excute("U:V:X30:Y?");
+
+
     // 测试一些命令
     tree.excute(":SOURce1:CURRent:PROTection:CLEar");
     std::string result1 = tree.excute(":SOURce2:CURRent:PROTection:TRIPped?");
@@ -624,6 +655,10 @@ void testV2()
     tree.excute(":SYSTem:BEEPer:IMMediate");
     std::string result3 = tree.excute(":SYSTem:VERSION?");
     std::string result4 = tree.excute(":SYSTem:COMMunicate:LAN:MAC?");
+
+    tree.excute("SOURce:VOLTage:STEP 2.5");
+    tree.excute("SOUR1:VOLT:STEP 2.5");//缩写加默认参数
+
      qDebug()<<timer.elapsed();
 }
 #endif // SCPITEST_H
